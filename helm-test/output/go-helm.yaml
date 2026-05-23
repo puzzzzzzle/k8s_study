@@ -1,0 +1,86 @@
+---
+# Source: web-demo/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-pingpong
+  labels:
+    helm.sh/chart: web-demo-0.1.0
+    app.kubernetes.io/name: go-pingpong
+    app.kubernetes.io/instance: go-pingpong
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: go-pingpong
+    app.kubernetes.io/instance: go-pingpong
+---
+# Source: web-demo/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-pingpong
+  labels:
+    helm.sh/chart: web-demo-0.1.0
+    app.kubernetes.io/name: go-pingpong
+    app.kubernetes.io/instance: go-pingpong
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: go-pingpong
+      app.kubernetes.io/instance: go-pingpong
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: go-pingpong
+        app.kubernetes.io/instance: go-pingpong
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: app
+          image: "go-pingpong:latest"
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+---
+# Source: web-demo/templates/service-monitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: go-pingpong
+  namespace: monitoring
+  labels:
+    helm.sh/chart: web-demo-0.1.0
+    app.kubernetes.io/name: go-pingpong
+    app.kubernetes.io/instance: go-pingpong
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: go-pingpong
+      app.kubernetes.io/instance: go-pingpong
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+  namespaceSelector:
+    any: true

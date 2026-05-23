@@ -1,0 +1,5 @@
+- minikube 监控: minikube dashboard --url , eg: http://127.0.0.1:44053/api/v1/namespaces/kubernetes-dashboard/services/http:kubernetes-dashboard:/proxy/
+- prometheus 监控: kubectl --namespace monitoring get secrets prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 -d ; echo
+- kubectl --namespace monitoring port-forward svc/prometheus-grafana 3000:80
+    - 记得加vscode端口转发
+- helm plugin install https://github.com/komodorio/helm-dashboard

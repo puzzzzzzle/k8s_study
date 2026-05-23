@@ -1,0 +1,25 @@
+{{- if and .Values.metrics.enabled .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "web-demo.fullname" . }}
+  {{- if .Values.serviceMonitor.namespace }}
+  namespace: {{ .Values.serviceMonitor.namespace }}
+  {{- end }}
+  labels:
+    {{- include "web-demo.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "web-demo.selectorLabels" . | nindent 6 }}
+  endpoints:
+    {{- if eq (.Values.metrics.port | int) (.Values.service.port | int) }}
+    - port: http
+    {{- else }}
+    - port: http-metrics
+    {{- end }}
+      path: {{ .Values.metrics.path }}
+      interval: {{ .Values.serviceMonitor.interval }}
+  namespaceSelector:
+    any: true
+{{- end }}

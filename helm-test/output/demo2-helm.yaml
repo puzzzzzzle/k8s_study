@@ -1,0 +1,166 @@
+---
+# Source: nginx-demo/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo2-html
+  labels:
+    helm.sh/chart: nginx-demo-0.1.0
+    app.kubernetes.io/name: demo2
+    app.kubernetes.io/instance: demo2
+    app.kubernetes.io/managed-by: Helm
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Demo2 - Green Service</title>
+      <style>
+        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .container { text-align: center; padding: 50px; background: white; border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        h1 { color: #11998e; font-size: 2.5em; margin-bottom: 10px; }
+        p { color: #666; font-size: 1.2em; }
+        .badge { display: inline-block; background: #11998e; color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.9em; margin-top: 15px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>🟢 Demo2 Service</h1>
+        <p>This is the <strong>Green</strong> themed nginx service.</p>
+        <p>Deployed via Helm Chart on Minikube.</p>
+        <span class="badge">demo2-nginx (2 replicas)</span>
+      </div>
+    </body>
+    </html>
+    
+  status.conf: |
+    server {
+      listen 8080;
+      location /stub_status {
+        stub_status on;
+        allow 127.0.0.1;
+        deny all;
+      }
+    }
+---
+# Source: nginx-demo/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo2
+  labels:
+    helm.sh/chart: nginx-demo-0.1.0
+    app.kubernetes.io/name: demo2
+    app.kubernetes.io/instance: demo2
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: 9113
+      targetPort: http-metrics
+      protocol: TCP
+      name: http-metrics
+  selector:
+    app.kubernetes.io/name: demo2
+    app.kubernetes.io/instance: demo2
+---
+# Source: nginx-demo/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo2
+  labels:
+    helm.sh/chart: nginx-demo-0.1.0
+    app.kubernetes.io/name: demo2
+    app.kubernetes.io/instance: demo2
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo2
+      app.kubernetes.io/instance: demo2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: demo2
+        app.kubernetes.io/instance: demo2
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9113"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: nginx
+          image: "nginx:stable"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          volumeMounts:
+            - name: html-volume
+              mountPath: /usr/share/nginx/html
+            - name: nginx-status-conf
+              mountPath: /etc/nginx/conf.d/status.conf
+              subPath: status.conf
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+        - name: nginx-exporter
+          image: "nginx/nginx-prometheus-exporter:1.4"
+          args:
+            - --nginx.scrape-uri=http://localhost:8080/stub_status
+          ports:
+            - name: http-metrics
+              containerPort: 9113
+              protocol: TCP
+          resources:
+            limits:
+              cpu: 50m
+              memory: 32Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
+      volumes:
+        - name: html-volume
+          configMap:
+            name: demo2-html
+        - name: nginx-status-conf
+          configMap:
+            name: demo2-html
+            items:
+              - key: status.conf
+                path: status.conf
+---
+# Source: nginx-demo/templates/service-monitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: demo2
+  namespace: monitoring
+  labels:
+    helm.sh/chart: nginx-demo-0.1.0
+    app.kubernetes.io/name: demo2
+    app.kubernetes.io/instance: demo2
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo2
+      app.kubernetes.io/instance: demo2
+  endpoints:
+    - port: http-metrics
+      path: /metrics
+      interval: 15s
+  namespaceSelector:
+    any: true

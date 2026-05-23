@@ -1,0 +1,29 @@
+# Demo2 服务 - 绿色主题
+name: "demo2"
+
+replicaCount: 2
+
+html:
+  content: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Demo2 - Green Service</title>
+      <style>
+        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .container { text-align: center; padding: 50px; background: white; border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        h1 { color: #11998e; font-size: 2.5em; margin-bottom: 10px; }
+        p { color: #666; font-size: 1.2em; }
+        .badge { display: inline-block; background: #11998e; color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.9em; margin-top: 15px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>🟢 Demo2 Service</h1>
+        <p>This is the <strong>Green</strong> themed nginx service.</p>
+        <p>Deployed via Helm Chart on Minikube.</p>
+        <span class="badge">demo2-nginx (2 replicas)</span>
+      </div>
+    </body>
+    </html>

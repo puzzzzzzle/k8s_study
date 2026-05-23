@@ -1,0 +1,6 @@
+apiVersion: v2
+name: web-demo
+description: 通用 HTTP 服务 Helm Chart，支持 nginx 静态站点和任意应用容器（如 Go API）
+type: application
+version: 0.1.0
+appVersion: "1.0"

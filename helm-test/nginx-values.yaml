@@ -1,0 +1,43 @@
+# nginx 静态站点演示
+name: "nginx-demo"
+
+replicaCount: 1
+
+image:
+  repository: nginx
+  tag: stable
+  pullPolicy: IfNotPresent
+
+service:
+  port: 80
+
+nginx:
+  enabled: true
+  html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Nginx Demo</title>
+      <style>
+        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .container { text-align: center; padding: 50px; background: white; border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        h1 { color: #667eea; font-size: 2.5em; margin-bottom: 10px; }
+        p { color: #666; font-size: 1.2em; }
+        .badge { display: inline-block; background: #667eea; color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.9em; margin-top: 15px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Nginx Demo</h1>
+        <p>Static site served by <strong>nginx</strong>.</p>
+        <p>Deployed via Helm Chart on Minikube.</p>
+        <span class="badge">nginx-demo</span>
+      </div>
+    </body>
+    </html>
+
+metrics:
+  enabled: true
+  port: 9113      # nginx-exporter sidecar
+  path: /metrics

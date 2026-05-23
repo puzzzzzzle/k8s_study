@@ -1,0 +1,29 @@
+# Demo1 服务 - 蓝色主题
+name: "demo1"
+
+replicaCount: 1
+
+html:
+  content: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Demo1 - Blue Service</title>
+      <style>
+        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .container { text-align: center; padding: 50px; background: white; border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        h1 { color: #667eea; font-size: 2.5em; margin-bottom: 10px; }
+        p { color: #666; font-size: 1.2em; }
+        .badge { display: inline-block; background: #667eea; color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.9em; margin-top: 15px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>🔵 Demo1 Service</h1>
+        <p>This is the <strong>Blue</strong> themed nginx service.</p>
+        <p>Deployed via Helm Chart on Minikube.</p>
+        <span class="badge">demo1-nginx</span>
+      </div>
+    </body>
+    </html>

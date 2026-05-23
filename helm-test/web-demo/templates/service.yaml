@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "web-demo.fullname" . }}
+  labels:
+    {{- include "web-demo.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    {{- if and .Values.metrics.enabled (ne (.Values.metrics.port | int) (.Values.service.port | int)) }}
+    - port: {{ .Values.metrics.port }}
+      targetPort: http-metrics
+      protocol: TCP
+      name: http-metrics
+    {{- end }}
+  selector:
+    {{- include "web-demo.selectorLabels" . | nindent 4 }}

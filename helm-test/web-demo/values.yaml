@@ -1,0 +1,37 @@
+# 服务名称，用于所有 K8s 资源命名；留空则使用 helm release name
+name: ""
+
+replicaCount: 1
+
+image:
+  repository: nginx
+  tag: stable
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# nginx 模式：enabled 时挂载 HTML ConfigMap 并注入 nginx-exporter sidecar
+nginx:
+  enabled: false
+  html: ""
+
+# Prometheus 监控
+metrics:
+  enabled: true
+  port: 9113    # nginx 模式：nginx-exporter sidecar 端口；通用模式：应用自身 metrics 端口
+  path: /metrics
+
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  namespace: monitoring   # Prometheus Operator 所在命名空间

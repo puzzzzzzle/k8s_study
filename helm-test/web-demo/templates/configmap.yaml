@@ -1,0 +1,20 @@
+{{- if .Values.nginx.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "web-demo.fullname" . }}-html
+  labels:
+    {{- include "web-demo.labels" . | nindent 4 }}
+data:
+  index.html: |
+    {{- .Values.nginx.html | nindent 4 }}
+  status.conf: |
+    server {
+      listen 8080;
+      location /stub_status {
+        stub_status on;
+        allow 127.0.0.1;
+        deny all;
+      }
+    }
+{{- end }}
