@@ -245,6 +245,116 @@ spec:
   - path: /xxx
 ```
 
+#### gRPC Stream 支持
+
+Envoy Gateway 原生支持 gRPC 的所有四种 RPC 模式：
+
+| 模式 | 说明 | 支持 |
+|------|------|------|
+| Unary | 单请求 / 单响应 | ✅ |
+| Server Streaming | 单请求 / 多响应（服务端推送） | ✅ |
+| Client Streaming | 多请求 / 单响应 | ✅ |
+| Bidirectional Streaming | 多请求 / 多响应（双向流） | ✅ |
+
+**关键字**：protobuf 中使用 `stream` 关键字声明流式接口：
+
+```protobuf
+service MyService {
+  rpc SimpleCall(Request) returns (Response);                       // 普通
+  rpc ServerPush(Request) returns (stream Response);               // 服务端流
+  rpc ClientPush(stream Request) returns (Response);               // 客户端流
+  rpc BiStream(stream Request) returns (stream Response);          // 双向流
+}
+```
+
+##### 多实例下 Stream 推送的路由保证
+
+**结论：同一个 stream 内的所有推送始终路由到同一个后端实例，无需额外配置。**
+
+原理：gRPC stream 基于 HTTP/2，一个 stream 调用 = 一个 HTTP/2 stream，从建立到关闭始终绑定在同一条 TCP 连接上。
+
+```
+时间线（Server Streaming 为例）：
+
+t0: 客户端 → Envoy → [负载均衡选择] → 实例A    (stream 建立，此时选定后端)
+t1: 实例A → Envoy → 客户端                      (第1次推送)
+t2: 实例A → Envoy → 客户端                      (第2次推送)
+...
+tN: 实例A → Envoy → 客户端                      (stream 关闭)
+```
+
+要点：
+- **负载均衡只发生一次**：在 stream 建立时（t0），后续推送不会重新路由
+- **HTTP/2 协议保证**：stream 是连接内的逻辑通道，天然绑定同一后端
+- **无需 sticky session**：不同于 HTTP/1.1 多次请求，gRPC stream 本身就是有状态连接
+
+##### 注意事项
+
+| 场景 | 处理方式 |
+|------|---------|
+| 断线重连 | stream 断开后重新建立，可能路由到不同实例；需应用层设计断点续传（如 cursor） |
+| 多个独立请求需要亲和性 | 使用 `BackendTrafficPolicy` + ConsistentHash 实现会话粘性 |
+| 超时配置 | 流式长连接需调大超时，避免被网关提前关闭 |
+
+##### gRPC 路由配置示例
+
+使用 `GRPCRoute`（Gateway API 原生支持）：
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: GRPCRoute
+metadata:
+  name: my-grpc-route
+spec:
+  parentRefs:
+    - name: demo-gateway
+  rules:
+    - matches:
+        - method:
+            service: mypackage.MyService
+      backendRefs:
+        - name: my-grpc-service
+          port: 50051
+```
+
+流式长连接超时配置：
+
+```yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: grpc-stream-timeout
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: GRPCRoute
+      name: my-grpc-route
+  timeout:
+    http:
+      requestTimeout: "0s"     # 不超时（流式场景）
+      idleTimeout: "3600s"     # 空闲 1 小时后断开
+```
+
+会话亲和性（多个独立请求路由到同一实例）：
+
+```yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: grpc-affinity
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: GRPCRoute
+      name: my-grpc-route
+  loadBalancer:
+    type: ConsistentHash
+    consistentHash:
+      type: Header
+      header:
+        name: x-session-id
+```
+
 #### 预览渲染结果
 
 ```bash
