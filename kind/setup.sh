@@ -20,17 +20,20 @@ err() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
 # 解析参数
 SKIP_MONITORING=false
 SKIP_GATEWAY=false
+SKIP_HEADLAMP=false
 
 for arg in "$@"; do
   case "$arg" in
     --skip-monitoring) SKIP_MONITORING=true ;;
     --skip-gateway)    SKIP_GATEWAY=true ;;
+    --skip-headlamp)   SKIP_HEADLAMP=true ;;
     --help|-h)
       echo "用法: $0 [选项]"
       echo ""
       echo "选项:"
       echo "  --skip-monitoring  跳过 Prometheus/Grafana 安装"
       echo "  --skip-gateway     跳过 Envoy Gateway 安装"
+      echo "  --skip-headlamp    跳过 Headlamp Dashboard 安装"
       echo "  --help, -h         显示帮助"
       exit 0
       ;;
@@ -107,6 +110,13 @@ if [[ "$SKIP_GATEWAY" == "false" ]]; then
   bash "${SCRIPT_DIR}/install-gateway.sh"
 else
   warn "跳过 Envoy Gateway 安装 (--skip-gateway)"
+fi
+
+if [[ "$SKIP_HEADLAMP" == "false" ]]; then
+  info "安装 Headlamp Dashboard..."
+  bash "${SCRIPT_DIR}/install-headlamp.sh"
+else
+  warn "跳过 Headlamp 安装 (--skip-headlamp)"
 fi
 
 # ═══════════════════════════════════════

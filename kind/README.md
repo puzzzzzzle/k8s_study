@@ -24,6 +24,7 @@
 │  │  安装组件:                                        │   │
 │  │  • kube-prometheus-stack (monitoring)             │   │
 │  │  • Envoy Gateway (envoy-gateway-system)           │   │
+│  │  • Headlamp Dashboard (kube-system)               │   │
 │  └───────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -54,13 +55,15 @@
 
 | 脚本 | 用途 |
 |------|------|
-| `setup.sh` | 一键创建集群 + 安装平台组件 (监控/网关) |
+| `setup.sh` | 一键创建集群 + 安装平台组件 (监控/网关/Dashboard) |
 | `teardown.sh` | 销毁集群，可选保留 registry |
 | `registry.sh` | 管理本地 Docker Registry |
 | `build-and-push.sh` | 构建镜像并推送到本地 registry |
 | `install-monitoring.sh` | 单独安装/升级 Prometheus 监控栈 |
 | `install-gateway.sh` | 单独安装/升级 Envoy Gateway |
-| `port-forward.sh` | 统一端口转发（监控服务） |
+| `install-headlamp.sh` | 单独安装/升级 Headlamp Dashboard |
+| `get-credentials.sh` | 获取各服务登录凭据 (Grafana/Headlamp) |
+| `port-forward.sh` | 统一端口转发（Dashboard/监控服务） |
 
 ## 端口映射表
 
@@ -68,6 +71,8 @@
 |---------|------|------|
 | 10080 | Envoy Gateway | HTTP 入口（通过 Host 头路由） |
 | 10443 | Envoy Gateway | HTTPS 入口 |
+| 3100 | Headlamp | K8s Dashboard（Token 登录） |
+| 3200 | Helm Dashboard | 集群资源 + Helm release 管理 |
 | 3000 | Grafana | 监控面板 (admin / prom-operator) |
 | 9090 | Prometheus | 指标查询 |
 | 9093 | AlertManager | 告警管理 |
@@ -133,6 +138,7 @@ kubectl get gateway -A
 ./setup.sh                    # 完整安装
 ./setup.sh --skip-monitoring  # 跳过 Prometheus 安装
 ./setup.sh --skip-gateway     # 跳过 Envoy Gateway 安装
+./setup.sh --skip-headlamp    # 跳过 Headlamp Dashboard 安装
 ```
 
 ## teardown.sh 选项
@@ -154,9 +160,40 @@ kind/
 ├── build-and-push.sh         # 镜像构建推送
 ├── install-monitoring.sh     # 安装监控
 ├── install-gateway.sh        # 安装网关
+├── install-headlamp.sh       # 安装 Headlamp Dashboard
+├── get-credentials.sh        # 获取服务登录凭据
 ├── port-forward.sh           # 端口转发
+├── headlamp-token.txt        # Headlamp 登录 Token (自动生成)
 └── values/
     └── prometheus-values.yaml  # Prometheus 配置
+```
+
+## Headlamp Dashboard
+
+[Headlamp](https://github.com/kubernetes-sigs/headlamp) 是 CNCF/Kubernetes SIG-UI 维护的轻量级 K8s Dashboard，单容器部署。
+
+### 访问方式
+
+```bash
+# 方式 1: port-forward（推荐，./port-forward.sh 已包含）
+kubectl port-forward -n kube-system svc/headlamp 3100:80
+
+# 方式 2: 通过 Gateway 路由
+curl -H 'Host: headlamp.demo.local' http://localhost:10080
+```
+
+### 登录
+
+使用 Token 方式登录，token 保存在 `headlamp-token.txt`：
+
+```bash
+cat headlamp-token.txt
+```
+
+### 单独安装/升级
+
+```bash
+./install-headlamp.sh
 ```
 
 ## 常见问题

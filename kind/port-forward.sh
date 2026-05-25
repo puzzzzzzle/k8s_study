@@ -10,6 +10,7 @@ set -e
 
 # 定义要转发的服务列表：本地端口:资源:目标端口[:namespace]
 FORWARDS=(
+  "3100:svc/headlamp:80:kube-system"
   "3000:svc/prometheus-grafana:80:monitoring"
   "9090:svc/prometheus-kube-prometheus-stack-prometheus:9090:monitoring"
   "9093:svc/prometheus-kube-prometheus-stack-alertmanager:9093:monitoring"
@@ -30,6 +31,17 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM
 
+# 启动 Helm Dashboard (集群资源可视化 + Helm release 管理)
+HELM_DASH_PORT=3200
+if command -v helm-dashboard >/dev/null 2>&1 || helm plugin list 2>/dev/null | grep -q dashboard; then
+  echo "⎈  启动 Helm Dashboard (port ${HELM_DASH_PORT})..."
+  helm dashboard --no-browser --port "${HELM_DASH_PORT}" > /tmp/helm-dashboard-kind.log 2>&1 &
+  PIDS+=($!)
+else
+  echo "⚠️  helm-dashboard 插件未安装，跳过 (安装: helm plugin install https://github.com/komodorio/helm-dashboard.git)"
+fi
+
+echo ""
 echo "🚀 启动端口转发 (kind 集群)..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -55,11 +67,14 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "📋 服务访问地址:"
 echo ""
-echo "  🔍 Grafana:       http://localhost:3000  (admin / prom-operator)"
-echo "  📊 Prometheus:    http://localhost:9090"
-echo "  🔔 AlertManager:  http://localhost:9093"
+echo "  🖥️  Headlamp:      http://localhost:3100  (K8s Dashboard)"
+echo "  ⎈  Helm Dashboard: http://localhost:${HELM_DASH_PORT}  (集群资源 + Helm 管理)"
+echo "  🔍 Grafana:        http://localhost:3000  (admin / prom-operator)"
+echo "  📊 Prometheus:     http://localhost:9090"
+echo "  🔔 AlertManager:   http://localhost:9093"
 echo ""
 echo "  🚪 Gateway 入口 (宿主机端口 10080/10443):"
+echo "     curl -H 'Host: headlamp.demo.local' http://localhost:10080  (Headlamp)"
 echo "     curl -H 'Host: <your-app>.demo.local' http://localhost:10080"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
