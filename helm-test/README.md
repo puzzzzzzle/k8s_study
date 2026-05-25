@@ -142,17 +142,9 @@ helm uninstall go-pingpong
 #### 前置条件：安装 Envoy Gateway
 
 ```bash
-# 安装 Gateway API CRD（如尚未安装）
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
-
-# 通过 Helm 安装 Envoy Gateway
-helm install eg oci://docker.io/envoyproxy/gateway-helm \
-  --version v1.2.4 \
-  -n envoy-gateway-system --create-namespace
-
-# 验证安装
-kubectl get pods -n envoy-gateway-system
-kubectl get gatewayclass
+# 一键安装（安装 CRDs + 控制器 + 自动 patch Service）
+cd /data/srcs/k8s/kind
+./install-gateway.sh
 ```
 
 #### 部署带 Gateway 的服务
@@ -165,36 +157,67 @@ helm upgrade --install nginx-demo ./web-demo -f nginx-values.yaml
 
 # 部署 go-pingpong（复用已有 Gateway，只创建 HTTPRoute）
 helm upgrade --install go-pingpong ./web-demo -f go-values.yaml
+
+# 首次部署后需要再运行一次 install-gateway.sh 来 patch Envoy Service
+# （因为 Gateway 资源是由 helm 创建的，Envoy Service 在 helm install 之后才出现）
+cd /data/srcs/k8s/kind && ./install-gateway.sh
 ```
 
 #### 架构说明
 
 ```
-                           ┌─────────────────────────────────────┐
-                           │         demo-gateway                 │
-                           │   (Envoy Gateway 自动创建 Envoy Pod) │
-   外部请求 ──→ LB(:80) ──→│                                     │
-                           │  Host: nginx.demo.local → nginx-demo │
-                           │  Host: go.demo.local   → go-pingpong │
-                           └─────────────────────────────────────┘
+                       ┌────────────────────────────────────────────┐
+                       │            demo-gateway                     │
+                       │   (Envoy Gateway 自动创建 Envoy Proxy Pod)  │
+  curl localhost:30080 │                                            │
+  ─────────────────────┤  /ping  → go-pingpong Service (:8080)     │
+                       │  /      → nginx-demo Service (:80)  兜底   │
+                       └────────────────────────────────────────────┘
 ```
 
-两个服务共享一个 Gateway（`demo-gateway`），通过域名（hostname）区分路由：
-- `nginx.demo.local` → nginx-demo Service (:80)
-- `go.demo.local` → go-pingpong Service (:8080)
+采用**纯 path 路由**（不区分 hostname），多个服务共享一个 Gateway（`demo-gateway`），通过路径区分：
 
-#### 本地测试（minikube）
+| 路径 | 后端服务 | 匹配方式 |
+|------|---------|---------|
+| `/ping` | go-pingpong:8080 | PathPrefix（优先匹配） |
+| `/` | nginx-demo:80 | PathPrefix（兜底） |
+
+> 路由优先级：`Exact` > 更长的 `PathPrefix` > 更短的 `PathPrefix`
+
+#### 访问方式（kind 环境）
 
 ```bash
-# 获取 Gateway 对应的 Envoy Service
-kubectl get svc -n default | grep envoy
+curl http://localhost:30080/        # → nginx-demo
+curl http://localhost:30080/ping    # → go-pingpong {"message":"pong",...}
+```
 
-# minikube 环境使用 port-forward 访问 Gateway
-kubectl port-forward svc/envoy-default-demo-gateway-* 8888:80
+无需 `-H 'Host: ...'`，直接 `localhost` + path 即可。
 
-# 通过 Host header 路由
-curl -H "Host: nginx.demo.local" http://localhost:8888/
-curl -H "Host: go.demo.local" http://localhost:8888/ping
+#### Kind 环境 NodePort Patch 原理
+
+在 kind 中，宿主机通过 Docker 端口映射访问集群节点端口：
+
+```
+宿主机 localhost:30080 → Docker → control-plane 节点 :30080 → kube-proxy → Envoy Pod
+```
+
+但 Envoy Gateway **自动创建的 Service** 有两个问题导致默认无法访问：
+
+| 问题 | 默认值 | 后果 |
+|------|--------|------|
+| NodePort 随机 | `31xxx`（随机分配） | kind 只映射了 30080，随机端口到不了 |
+| `externalTrafficPolicy: Local` | 只有 Pod 所在节点可转发 | Envoy Pod 在 worker，但端口映射在 control-plane → 流量不通 |
+
+**`install-gateway.sh` 自动修复**：通过 label `gateway.envoyproxy.io/owning-gateway-name=demo-gateway` 找到 Envoy Service，patch 为：
+
+```yaml
+spec:
+  externalTrafficPolicy: Cluster   # 所有节点都可转发（跨节点 SNAT）
+  ports:
+  - name: http-80
+    port: 80
+    targetPort: 10080              # Envoy proxy 容器实际监听端口
+    nodePort: 30080                # 固定为 kind 映射的端口
 ```
 
 #### Values 配置说明
@@ -206,9 +229,9 @@ curl -H "Host: go.demo.local" http://localhost:8888/ping
 | `gateway.createGatewayClass` | 是否创建 GatewayClass（集群只需一个） | `true` |
 | `gateway.createGateway` | 是否创建 Gateway 资源 | `true` |
 | `gateway.name` | Gateway 名称（多服务可共享） | `<fullname>-gateway` |
-| `gateway.hostname` | HTTPRoute 域名匹配 | 空（匹配所有） |
+| `gateway.hostname` | HTTPRoute 域名匹配（留空 = 纯 path 路由） | 空 |
 | `gateway.tls.enabled` | 是否启用 HTTPS listener | `false` |
-| `gateway.routes` | 自定义路由规则 | 空（默认 `/` 全转发） |
+| `gateway.routes` | 自定义路由规则（path + pathType） | 空（默认 `/` 全转发） |
 
 #### 多服务共享 Gateway 的部署模式
 

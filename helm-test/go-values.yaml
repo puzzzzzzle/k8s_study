@@ -26,11 +26,7 @@ gateway:
   createGatewayClass: false       # 已由 nginx-demo 创建，无需重复
   createGateway: false            # 复用 demo-gateway
   name: demo-gateway              # 引用已有的 Gateway
-  hostname: go.demo.local         # 按域名路由
+  # hostname 留空 = 不按域名过滤，纯 path 路由，可直接 curl localhost:10080/ping
   routes:
   - path: /ping
     pathType: PathPrefix
-  - path: /healthz
-    pathType: Exact
-  - path: /metrics
-    pathType: Exact
