@@ -7,7 +7,7 @@ metadata:
   labels:
     helm.sh/chart: web-demo-0.1.0
     app.kubernetes.io/name: go-pingpong
-    app.kubernetes.io/instance: go-pingpong
+    app.kubernetes.io/instance: release-name
     app.kubernetes.io/managed-by: Helm
 spec:
   type: ClusterIP
@@ -18,7 +18,7 @@ spec:
       name: http
   selector:
     app.kubernetes.io/name: go-pingpong
-    app.kubernetes.io/instance: go-pingpong
+    app.kubernetes.io/instance: release-name
 ---
 # Source: web-demo/templates/deployment.yaml
 apiVersion: apps/v1
@@ -28,19 +28,19 @@ metadata:
   labels:
     helm.sh/chart: web-demo-0.1.0
     app.kubernetes.io/name: go-pingpong
-    app.kubernetes.io/instance: go-pingpong
+    app.kubernetes.io/instance: release-name
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: go-pingpong
-      app.kubernetes.io/instance: go-pingpong
+      app.kubernetes.io/instance: release-name
   template:
     metadata:
       labels:
         app.kubernetes.io/name: go-pingpong
-        app.kubernetes.io/instance: go-pingpong
+        app.kubernetes.io/instance: release-name
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8080"
@@ -48,8 +48,8 @@ spec:
     spec:
       containers:
         - name: app
-          image: "go-pingpong:latest"
-          imagePullPolicy: Never
+          image: "go-pingpong:2026-05-23-19-42-40"
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080
@@ -62,6 +62,54 @@ spec:
               cpu: 50m
               memory: 64Mi
 ---
+# Source: web-demo/templates/gateway.yaml
+# GatewayClass：声明使用 Envoy Gateway 控制器
+# 集群级资源，通常只需创建一次；这里通过开关控制是否由 Chart 管理
+---
+# Source: web-demo/templates/gateway.yaml
+# Gateway：定义监听端口和协议
+---
+# Source: web-demo/templates/gateway.yaml
+# HTTPRoute：将流量路由到后端 Service
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: go-pingpong
+  namespace: default
+  labels:
+    helm.sh/chart: web-demo-0.1.0
+    app.kubernetes.io/name: go-pingpong
+    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/managed-by: Helm
+spec:
+  parentRefs:
+  - name: demo-gateway
+    namespace: default
+  hostnames:
+  - "go.demo.local"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /ping
+    backendRefs:
+    - name: go-pingpong
+      port: 8080
+  - matches:
+    - path:
+        type: Exact
+        value: /healthz
+    backendRefs:
+    - name: go-pingpong
+      port: 8080
+  - matches:
+    - path:
+        type: Exact
+        value: /metrics
+    backendRefs:
+    - name: go-pingpong
+      port: 8080
+---
 # Source: web-demo/templates/service-monitor.yaml
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -71,13 +119,13 @@ metadata:
   labels:
     helm.sh/chart: web-demo-0.1.0
     app.kubernetes.io/name: go-pingpong
-    app.kubernetes.io/instance: go-pingpong
+    app.kubernetes.io/instance: release-name
     app.kubernetes.io/managed-by: Helm
 spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: go-pingpong
-      app.kubernetes.io/instance: go-pingpong
+      app.kubernetes.io/instance: release-name
   endpoints:
     - port: http
       path: /metrics

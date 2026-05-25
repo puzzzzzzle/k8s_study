@@ -41,3 +41,12 @@ metrics:
   enabled: true
   port: 9113      # nginx-exporter sidecar
   path: /metrics
+
+# Envoy Gateway 入口
+gateway:
+  enabled: true
+  className: eg
+  createGatewayClass: true        # 集群只需创建一次，部署多个服务时后续的设为 false
+  createGateway: true
+  name: demo-gateway              # 共享网关名称（多服务可复用同一个 Gateway）
+  hostname: nginx.demo.local      # 按域名路由

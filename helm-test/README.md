@@ -134,3 +134,102 @@ Go 模式：
 helm uninstall nginx-demo
 helm uninstall go-pingpong
 ```
+
+### Envoy Gateway（Gateway API 入口网关）
+
+本 Chart 支持通过 [Envoy Gateway](https://gateway.envoyproxy.io/) 暴露服务，基于 Kubernetes Gateway API 标准。
+
+#### 前置条件：安装 Envoy Gateway
+
+```bash
+# 安装 Gateway API CRD（如尚未安装）
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+
+# 通过 Helm 安装 Envoy Gateway
+helm install eg oci://docker.io/envoyproxy/gateway-helm \
+  --version v1.2.4 \
+  -n envoy-gateway-system --create-namespace
+
+# 验证安装
+kubectl get pods -n envoy-gateway-system
+kubectl get gatewayclass
+```
+
+#### 部署带 Gateway 的服务
+
+```bash
+cd /data/srcs/k8s/helm-test
+
+# 部署 nginx-demo（同时创建 GatewayClass + Gateway + HTTPRoute）
+helm upgrade --install nginx-demo ./web-demo -f nginx-values.yaml
+
+# 部署 go-pingpong（复用已有 Gateway，只创建 HTTPRoute）
+helm upgrade --install go-pingpong ./web-demo -f go-values.yaml
+```
+
+#### 架构说明
+
+```
+                           ┌─────────────────────────────────────┐
+                           │         demo-gateway                 │
+                           │   (Envoy Gateway 自动创建 Envoy Pod) │
+   外部请求 ──→ LB(:80) ──→│                                     │
+                           │  Host: nginx.demo.local → nginx-demo │
+                           │  Host: go.demo.local   → go-pingpong │
+                           └─────────────────────────────────────┘
+```
+
+两个服务共享一个 Gateway（`demo-gateway`），通过域名（hostname）区分路由：
+- `nginx.demo.local` → nginx-demo Service (:80)
+- `go.demo.local` → go-pingpong Service (:8080)
+
+#### 本地测试（minikube）
+
+```bash
+# 获取 Gateway 对应的 Envoy Service
+kubectl get svc -n default | grep envoy
+
+# minikube 环境使用 port-forward 访问 Gateway
+kubectl port-forward svc/envoy-default-demo-gateway-* 8888:80
+
+# 通过 Host header 路由
+curl -H "Host: nginx.demo.local" http://localhost:8888/
+curl -H "Host: go.demo.local" http://localhost:8888/ping
+```
+
+#### Values 配置说明
+
+| 字段 | 说明 | 默认值 |
+|------|------|--------|
+| `gateway.enabled` | 是否启用 Gateway API 路由 | `false` |
+| `gateway.className` | GatewayClass 名称 | `eg` |
+| `gateway.createGatewayClass` | 是否创建 GatewayClass（集群只需一个） | `true` |
+| `gateway.createGateway` | 是否创建 Gateway 资源 | `true` |
+| `gateway.name` | Gateway 名称（多服务可共享） | `<fullname>-gateway` |
+| `gateway.hostname` | HTTPRoute 域名匹配 | 空（匹配所有） |
+| `gateway.tls.enabled` | 是否启用 HTTPS listener | `false` |
+| `gateway.routes` | 自定义路由规则 | 空（默认 `/` 全转发） |
+
+#### 多服务共享 Gateway 的部署模式
+
+```
+第一个服务（创建基础设施）：
+  gateway.createGatewayClass: true
+  gateway.createGateway: true
+  gateway.name: demo-gateway
+
+后续服务（仅创建 HTTPRoute）：
+  gateway.createGatewayClass: false
+  gateway.createGateway: false
+  gateway.name: demo-gateway          # 引用同一个 Gateway
+```
+
+#### 预览渲染结果
+
+```bash
+# 查看 nginx-demo 的 Gateway 资源
+helm template nginx-demo ./web-demo -f nginx-values.yaml -s templates/gateway.yaml
+
+# 查看 go-pingpong 的 HTTPRoute
+helm template go-pingpong ./web-demo -f go-values.yaml -s templates/gateway.yaml
+```

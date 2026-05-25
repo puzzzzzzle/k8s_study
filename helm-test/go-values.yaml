@@ -4,8 +4,8 @@ name: "go-pingpong"
 replicaCount: 1
 
 image:
-  repository: go-pingpong   # minikube 本地镜像（需先执行 docker build + minikube image load）
-  tag: 2026-05-23-19-42-40
+  repository: localhost:5001/go-pingpong   # minikube 本地镜像（需先执行 docker build + minikube image load）
+  tag: 20260525-160025
   pullPolicy: IfNotPresent         # 使用本地镜像，不拉取远端
 
 service:
@@ -18,3 +18,19 @@ metrics:
   enabled: true
   port: 8080                # Go 应用在同一端口原生暴露 /metrics
   path: /metrics
+
+# Envoy Gateway 入口
+gateway:
+  enabled: true
+  className: eg
+  createGatewayClass: false       # 已由 nginx-demo 创建，无需重复
+  createGateway: false            # 复用 demo-gateway
+  name: demo-gateway              # 引用已有的 Gateway
+  hostname: go.demo.local         # 按域名路由
+  routes:
+  - path: /ping
+    pathType: PathPrefix
+  - path: /healthz
+    pathType: Exact
+  - path: /metrics
+    pathType: Exact

@@ -63,5 +63,8 @@ sleep 1
 DASHBOARD_URL=$(grep -oP 'http://[^\s]+' /tmp/minikube-dashboard.log 2>/dev/null || echo "启动中...")
 
 echo "dashboard URL: ${DASHBOARD_URL}"
+
+echo "helm dashboard URL: http://localhost:3200"
+
 # 等待所有后台进程，任一退出则提示
 wait
