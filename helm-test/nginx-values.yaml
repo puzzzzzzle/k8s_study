@@ -42,14 +42,11 @@ metrics:
   port: 9113      # nginx-exporter sidecar
   path: /metrics
 
-# Envoy Gateway 入口
+# Envoy Gateway 入口（公共基础设施由 gateway.yaml 管理）
 gateway:
   enabled: true
-  className: eg
-  createGatewayClass: true        # 集群只需创建一次，部署多个服务时后续的设为 false
-  createGateway: true
-  name: demo-gateway              # 共享网关名称（多服务可复用同一个 Gateway）
-  # hostname 留空 = 不按域名过滤，纯 path 路由，可直接 curl localhost:10080/
+  name: demo-gateway              # 引用已有的 Gateway
+  # hostname 留空 = 纯 path 路由，可直接 curl localhost:30080/
   routes:
   - path: /
     pathType: PathPrefix

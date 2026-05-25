@@ -37,21 +37,12 @@ serviceMonitor:
   namespace: monitoring   # Prometheus Operator 所在命名空间
 
 # Envoy Gateway（Gateway API）
+# 公共基础设施（GatewayClass + Gateway）由独立的 gateway.yaml 管理
+# 此处仅控制 HTTPRoute 的创建
 gateway:
   enabled: false
-  className: eg                    # GatewayClass 名称
-  createGatewayClass: true         # 是否由本 Chart 创建 GatewayClass（集群内只需一个）
-  createGateway: true              # 是否由本 Chart 创建 Gateway 资源
-  name: ""                         # Gateway 名称，留空则使用 <fullname>-gateway
+  name: ""                         # 引用的 Gateway 名称，留空则使用 <fullname>-gateway
   hostname: ""                     # 匹配的域名（如 app.example.com），留空则匹配所有
-  annotations: {}
-  listener:
-    port: 80                       # Gateway 监听端口
-    hostname: ""                   # listener 级别的域名过滤
-    allowedRoutesFrom: Same        # Same / All / Selector
-  tls:
-    enabled: false
-    secretName: ""                 # TLS 证书 Secret 名称
   routes: []                       # 自定义路由规则，留空则默认 / 前缀匹配转发到 service
   # routes 示例：
   # - path: /api

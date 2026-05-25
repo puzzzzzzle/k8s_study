@@ -17,13 +17,15 @@ helm-test/
 │       ├── deployment.yaml    # 支持 nginx / 通用两种模式
 │       ├── service.yaml
 │       ├── configmap.yaml     # 仅 nginx.enabled 时渲染
+│       ├── gateway.yaml       # HTTPRoute（GatewayClass/Gateway 由开关控制）
 │       └── service-monitor.yaml
 ├── go-pingpong/               # Go ping/pong API 服务源码
 │   ├── main.go                # GET /ping → pong，GET /metrics → prometheus
 │   ├── go.mod
 │   └── Dockerfile
-├── nginx-values.yaml          # nginx 静态站点配置
-├── go-values.yaml             # Go ping/pong API 配置
+├── gateway.yaml               # 🔑 公共基础设施（GatewayClass + Gateway）
+├── nginx-values.yaml          # nginx 静态站点配置（HTTPRoute: /）
+├── go-values.yaml             # Go ping/pong API 配置（HTTPRoute: /ping）
 └── output/                    # helm template 渲染产物（预览用）
     ├── nginx-helm.yaml
     └── go-helm.yaml
@@ -152,14 +154,14 @@ cd /data/srcs/k8s/kind
 ```bash
 cd /data/srcs/k8s/helm-test
 
-# 部署 nginx-demo（同时创建 GatewayClass + Gateway + HTTPRoute）
-helm upgrade --install nginx-demo ./web-demo -f nginx-values.yaml
+# 1. 部署公共基础设施（GatewayClass + Gateway）
+kubectl apply -f gateway.yaml
 
-# 部署 go-pingpong（复用已有 Gateway，只创建 HTTPRoute）
+# 2. 部署业务服务（各自只创建 HTTPRoute）
+helm upgrade --install nginx-demo ./web-demo -f nginx-values.yaml
 helm upgrade --install go-pingpong ./web-demo -f go-values.yaml
 
-# 首次部署后需要再运行一次 install-gateway.sh 来 patch Envoy Service
-# （因为 Gateway 资源是由 helm 创建的，Envoy Service 在 helm install 之后才出现）
+# 3. Patch Envoy Service（首次部署 Gateway 后执行一次）
 cd /data/srcs/k8s/kind && ./install-gateway.sh
 ```
 
@@ -224,27 +226,23 @@ spec:
 
 | 字段 | 说明 | 默认值 |
 |------|------|--------|
-| `gateway.enabled` | 是否启用 Gateway API 路由 | `false` |
-| `gateway.className` | GatewayClass 名称 | `eg` |
-| `gateway.createGatewayClass` | 是否创建 GatewayClass（集群只需一个） | `true` |
-| `gateway.createGateway` | 是否创建 Gateway 资源 | `true` |
-| `gateway.name` | Gateway 名称（多服务可共享） | `<fullname>-gateway` |
+| `gateway.enabled` | 是否启用 HTTPRoute 路由 | `false` |
+| `gateway.name` | 引用的 Gateway 名称 | `<fullname>-gateway` |
 | `gateway.hostname` | HTTPRoute 域名匹配（留空 = 纯 path 路由） | 空 |
-| `gateway.tls.enabled` | 是否启用 HTTPS listener | `false` |
 | `gateway.routes` | 自定义路由规则（path + pathType） | 空（默认 `/` 全转发） |
 
 #### 多服务共享 Gateway 的部署模式
 
 ```
-第一个服务（创建基础设施）：
-  gateway.createGatewayClass: true
-  gateway.createGateway: true
-  gateway.name: demo-gateway
+公共基础设施（gateway.yaml，kubectl apply 管理）：
+  - GatewayClass: eg
+  - Gateway: demo-gateway
 
-后续服务（仅创建 HTTPRoute）：
-  gateway.createGatewayClass: false
-  gateway.createGateway: false
-  gateway.name: demo-gateway          # 引用同一个 Gateway
+各业务服务（helm release，只创建 HTTPRoute）：
+  gateway.enabled: true
+  gateway.name: demo-gateway          # 引用公共 Gateway
+  gateway.routes:                     # 各自的路由规则
+  - path: /xxx
 ```
 
 #### 预览渲染结果

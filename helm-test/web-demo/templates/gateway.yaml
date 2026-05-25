@@ -1,62 +1,7 @@
 {{- if .Values.gateway.enabled }}
 ---
-# GatewayClass：声明使用 Envoy Gateway 控制器
-# 集群级资源，通常只需创建一次；这里通过开关控制是否由 Chart 管理
-{{- if .Values.gateway.createGatewayClass }}
-apiVersion: gateway.networking.k8s.io/v1
-kind: GatewayClass
-metadata:
-  name: {{ .Values.gateway.className }}
-  labels:
-    {{- include "web-demo.labels" . | nindent 4 }}
-spec:
-  controllerName: gateway.envoyproxy.io/gatewayclass-controller
-{{- end }}
----
-# Gateway：定义监听端口和协议
-{{- if .Values.gateway.createGateway }}
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
-metadata:
-  name: {{ .Values.gateway.name | default (printf "%s-gateway" (include "web-demo.fullname" .)) }}
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "web-demo.labels" . | nindent 4 }}
-  {{- with .Values.gateway.annotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-spec:
-  gatewayClassName: {{ .Values.gateway.className }}
-  listeners:
-  - name: http
-    port: {{ .Values.gateway.listener.port | default 80 }}
-    protocol: HTTP
-    {{- if .Values.gateway.listener.hostname }}
-    hostname: {{ .Values.gateway.listener.hostname | quote }}
-    {{- end }}
-    allowedRoutes:
-      namespaces:
-        from: {{ .Values.gateway.listener.allowedRoutesFrom | default "Same" }}
-  {{- if .Values.gateway.tls.enabled }}
-  - name: https
-    port: 443
-    protocol: HTTPS
-    {{- if .Values.gateway.listener.hostname }}
-    hostname: {{ .Values.gateway.listener.hostname | quote }}
-    {{- end }}
-    tls:
-      mode: Terminate
-      certificateRefs:
-      - kind: Secret
-        name: {{ .Values.gateway.tls.secretName }}
-    allowedRoutes:
-      namespaces:
-        from: {{ .Values.gateway.listener.allowedRoutesFrom | default "Same" }}
-  {{- end }}
-{{- end }}
----
 # HTTPRoute：将流量路由到后端 Service
+# 公共基础设施（GatewayClass + Gateway）由独立的 gateway.yaml 管理，不在此模板中创建
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
