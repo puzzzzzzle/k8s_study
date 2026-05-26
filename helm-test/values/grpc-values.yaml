@@ -36,7 +36,7 @@ serviceMonitor:
 
 # 共享存储卷（挂载 NFS 配置目录，只读）
 sharedVolume:
-  enabled: false
+  enabled: true
   claimName: "nfs-shared-pvc"
   mountPath: "/shared-config"
   readOnly: true

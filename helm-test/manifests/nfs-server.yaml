@@ -46,7 +46,9 @@ spec:
       - name: nfs-storage
         emptyDir: {}          # kind 环境使用 emptyDir；生产环境可替换为 hostPath 或云盘
 ---
-# 2. NFS Server Service（ClusterIP，供 PV 引用）
+# 2. NFS Server Service（固定 ClusterIP，供 PV 引用）
+# 注：PV 的 nfs.server 使用此 ClusterIP，因为 kubelet mount 在节点网络执行，
+#     节点 DNS 无法解析 *.svc.cluster.local
 apiVersion: v1
 kind: Service
 metadata:
@@ -56,6 +58,7 @@ metadata:
     app: nfs-server
 spec:
   type: ClusterIP
+  clusterIP: 10.96.100.100    # 固定 IP，PV 引用此地址
   ports:
   - name: nfs
     port: 2049
@@ -76,8 +79,9 @@ spec:
   accessModes:
   - ReadWriteMany            # NFS 天然支持 RWX
   persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""       # 静态绑定，不走动态 provisioner
   nfs:
-    server: nfs-server.default.svc.cluster.local
+    server: 10.96.100.100       # nfs-server Service 固定 ClusterIP
     path: /
 ---
 # 4. PersistentVolumeClaim（业务 Pod 和 config-writer 共同引用）
@@ -89,12 +93,11 @@ metadata:
 spec:
   accessModes:
   - ReadWriteMany
+  storageClassName: ""       # 静态绑定，不走动态 provisioner
+  volumeName: nfs-shared-pv  # 直接绑定到指定 PV
   resources:
     requests:
       storage: 1Gi
-  selector:
-    matchLabels:
-      type: nfs-shared
 ---
 # 5. Config Writer Deployment（唯一可写 Pod，运维通过 kubectl cp 写入配置）
 apiVersion: apps/v1
