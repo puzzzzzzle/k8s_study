@@ -2,6 +2,55 @@
 # 集群级资源，独立于业务服务管理
 # 用法: kubectl apply -f gateway.yaml
 ---
+# EnvoyProxy: 定制 Envoy data-plane 配置（kind 环境专用）
+# 使用 StrategicMerge patch 方式确保 EG 控制器正确应用配置：
+# 1. 将 Envoy Pod 调度到 control-plane 节点（kind extraPortMappings 所在节点）
+# 2. 设置 externalTrafficPolicy=Cluster 避免跨节点超时
+# 3. 绑定到 Gateway（而非 GatewayClass）确保 per-gateway 级别生效
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: kind-proxy-config
+  namespace: default
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        pod:
+          tolerations:
+          - key: "node-role.kubernetes.io/control-plane"
+            operator: "Exists"
+            effect: "NoSchedule"
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: ""
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              template:
+                spec:
+                  nodeSelector:
+                    node-role.kubernetes.io/control-plane: ""
+                  tolerations:
+                  - key: "node-role.kubernetes.io/control-plane"
+                    operator: "Exists"
+                    effect: "NoSchedule"
+      envoyService:
+        type: NodePort
+        externalTrafficPolicy: Cluster
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              externalTrafficPolicy: Cluster
+              ports:
+              - name: http-80
+                port: 80
+                targetPort: 10080
+                nodePort: 30080
+                protocol: TCP
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
 metadata:
@@ -16,6 +65,11 @@ metadata:
   namespace: default
 spec:
   gatewayClassName: eg
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: kind-proxy-config
   listeners:
   - name: http
     port: 80
@@ -23,3 +77,13 @@ spec:
     allowedRoutes:
       namespaces:
         from: Same
+  # gRPC 复用 port 80（同一 HTTP/2 端口，Envoy 通过 content-type 区分）
+  # 如果需要独立端口，取消下面注释并添加 kind extraPortMapping + NodePort patch
+  # - name: grpc
+  #   port: 50051
+  #   protocol: HTTP
+  #   allowedRoutes:
+  #     namespaces:
+  #       from: Same
+  #     kinds:
+  #     - kind: GRPCRoute

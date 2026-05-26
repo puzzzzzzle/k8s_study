@@ -14,6 +14,7 @@ FORWARDS=(
   "3000:svc/prometheus-grafana:80:monitoring"
   "9090:svc/prometheus-kube-prometheus-stack-prometheus:9090:monitoring"
   "9093:svc/prometheus-kube-prometheus-stack-alertmanager:9093:monitoring"
+  "50051:svc/go-grpc-svc:50051:default"
 )
 
 PIDS=()
@@ -76,6 +77,12 @@ echo ""
 echo "  🚪 Gateway 入口 (宿主机端口 30080):"
 echo "     curl http://localhost:30080/       (nginx-demo)"
 echo "     curl http://localhost:30080/ping   (go-pingpong)"
+echo "     grpcurl -plaintext localhost:30080 list  (go-grpc-svc via Gateway)"
+echo ""
+echo "  🔌 gRPC 直连 (port-forward):"
+echo "     grpcurl -plaintext localhost:50051 list"
+echo "     grpcurl -plaintext localhost:50051 configsvc.ConfigService/Ping"
+echo "     grpcurl -plaintext -d '{\"filename\":\"app.json\"}' localhost:50051 configsvc.ConfigService/GetConfig"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "按 Ctrl+C 停止所有转发"

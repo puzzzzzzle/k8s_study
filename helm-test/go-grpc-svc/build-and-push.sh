@@ -1,0 +1,1 @@
+../../kind/build-and-push.sh

@@ -21,12 +21,19 @@ helm-test/
 │       └── service-monitor.yaml
 ├── values/                    # Helm values 文件（各服务覆盖配置）
 │   ├── nginx-values.yaml      # nginx 静态站点配置（HTTPRoute: /）
-│   └── go-values.yaml         # Go ping/pong API 配置（HTTPRoute: /ping）
+│   ├── go-values.yaml         # Go ping/pong API 配置（HTTPRoute: /ping）
+│   └── grpc-values.yaml       # Go gRPC 服务配置（配置下发 + sharedVolume）
 ├── manifests/                 # K8s 原生资源（kubectl apply 管理）
 │   ├── gateway.yaml           # 🔑 公共基础设施（GatewayClass + Gateway）
 │   └── nfs-server.yaml        # 🔑 NFS 共享存储基础设施（NFS Server + PV/PVC + config-writer）
 ├── go-pingpong/               # Go ping/pong API 服务源码
 │   ├── main.go                # GET /ping → pong，GET /metrics → prometheus
+│   ├── go.mod
+│   └── Dockerfile
+├── go-grpc-svc/               # Go gRPC 服务源码（配置下发 + 通用 gRPC 测试）
+│   ├── main.go                # gRPC server (Ping, GetConfig, ListConfigs)
+│   ├── proto/configsvc.proto  # proto 定义
+│   ├── pb/                    # 生成的 gRPC 代码
 │   ├── go.mod
 │   └── Dockerfile
 ├── output/                    # helm template 渲染产物（预览用）
@@ -85,6 +92,19 @@ minikube image load go-pingpong:latest --overwrite
 
 go-values.yaml 中 `imagePullPolicy: Never` 确保使用本地镜像，不尝试从远端拉取。
 
+### 构建 Go gRPC 镜像（kind 本地 Registry）
+
+```bash
+cd /data/srcs/k8s/helm-test/go-grpc-svc
+
+# 使用构建脚本（推送到本地 Registry localhost:5001）
+./build-and-push.sh
+
+# 或手动构建
+docker build -t localhost:5001/go-grpc-svc:latest .
+docker push localhost:5001/go-grpc-svc:latest
+```
+
 ### 部署
 
 ```bash
@@ -104,10 +124,12 @@ kubectl apply -f manifests/gateway.yaml
 # 3. 部署业务服务
 helm install nginx-demo ./web-demo -f values/nginx-values.yaml
 helm install go-pingpong ./web-demo -f values/go-values.yaml
+helm install go-grpc-svc ./web-demo -f values/grpc-values.yaml
 
 # 更新（幂等，不存在时自动创建）
 helm upgrade --install nginx-demo ./web-demo -f values/nginx-values.yaml
 helm upgrade --install go-pingpong ./web-demo -f values/go-values.yaml
+helm upgrade --install go-grpc-svc ./web-demo -f values/grpc-values.yaml
 ```
 
 ### 查看状态
@@ -134,6 +156,30 @@ kubectl port-forward svc/go-pingpong 8083:8080
 
 > 远端机器记得在 VS Code PORTS 面板添加对应端口转发。
 
+### gRPC 服务测试（go-grpc-svc）
+
+```bash
+# 端口转发
+kubectl port-forward svc/go-grpc-svc 50051:50051
+
+# 列出所有服务（需启用反射）
+grpcurl -plaintext localhost:50051 list
+
+# 列出服务方法
+grpcurl -plaintext localhost:50051 list configsvc.ConfigService
+
+# 调用 Ping
+grpcurl -plaintext localhost:50051 configsvc.ConfigService/Ping
+
+# 获取配置文件
+grpcurl -plaintext -d '{"filename": "app.json"}' localhost:50051 configsvc.ConfigService/GetConfig
+
+# 列出可用配置文件
+grpcurl -plaintext localhost:50051 configsvc.ConfigService/ListConfigs
+```
+
+> 安装 grpcurl：`go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest` 或从 [GitHub Releases](https://github.com/fullstorydev/grpcurl/releases) 下载。
+
 ### 监控链路
 
 ```
@@ -150,6 +196,7 @@ Go 模式：
 ```bash
 helm uninstall nginx-demo
 helm uninstall go-pingpong
+helm uninstall go-grpc-svc
 kubectl delete -f manifests/nfs-server.yaml
 kubectl delete -f manifests/gateway.yaml
 ```

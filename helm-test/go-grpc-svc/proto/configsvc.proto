@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package configsvc;
+
+option go_package = "go-grpc-svc/pb";
+
+// ConfigService 提供配置下发和通用 gRPC 测试接口
+service ConfigService {
+  // 健康检查 / 心跳
+  rpc Ping(PingRequest) returns (PingResponse);
+
+  // 读取共享配置文件并返回内容
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
+
+  // 列出可用配置文件
+  rpc ListConfigs(ListConfigsRequest) returns (ListConfigsResponse);
+}
+
+message PingRequest {}
+
+message PingResponse {
+  string message = 1;
+  string time = 2;
+}
+
+message GetConfigRequest {
+  // 要读取的配置文件名（相对于共享配置目录）
+  string filename = 1;
+}
+
+message GetConfigResponse {
+  bool success = 1;
+  // 文件内容（成功时返回）
+  string content = 2;
+  // 错误信息（失败时返回）
+  string error = 3;
+}
+
+message ListConfigsRequest {}
+
+message ListConfigsResponse {
+  repeated string filenames = 1;
+}

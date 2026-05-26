@@ -1,7 +1,50 @@
 {{- if .Values.gateway.enabled }}
+{{- if eq ((.Values.gateway).type | default "http") "grpc" }}
+---
+# GRPCRoute：将 gRPC 流量路由到后端 Service
+# 公共基础设施（GatewayClass + Gateway）由独立的 manifests/gateway.yaml 管理
+apiVersion: gateway.networking.k8s.io/v1
+kind: GRPCRoute
+metadata:
+  name: {{ include "web-demo.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "web-demo.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+  - name: {{ .Values.gateway.name | default (printf "%s-gateway" (include "web-demo.fullname" .)) }}
+    namespace: {{ .Release.Namespace }}
+    {{- if .Values.gateway.sectionName }}
+    sectionName: {{ .Values.gateway.sectionName }}
+    {{- end }}
+  {{- if .Values.gateway.hostname }}
+  hostnames:
+  - {{ .Values.gateway.hostname | quote }}
+  {{- end }}
+  rules:
+  {{- if .Values.gateway.grpcRoutes }}
+  {{- range .Values.gateway.grpcRoutes }}
+  - matches:
+    - method:
+        type: Exact
+        service: {{ .service | quote }}
+        {{- if .method }}
+        method: {{ .method | quote }}
+        {{- end }}
+    backendRefs:
+    - name: {{ include "web-demo.fullname" $ }}
+      port: {{ $.Values.service.port }}
+  {{- end }}
+  {{- else }}
+  # 默认路由：所有 gRPC 流量转发到服务（未指定 grpcRoutes 时的兜底）
+  - backendRefs:
+    - name: {{ include "web-demo.fullname" . }}
+      port: {{ .Values.service.port }}
+  {{- end }}
+{{- else }}
 ---
 # HTTPRoute：将流量路由到后端 Service
-# 公共基础设施（GatewayClass + Gateway）由独立的 gateway.yaml 管理，不在此模板中创建
+# 公共基础设施（GatewayClass + Gateway）由独立的 manifests/gateway.yaml 管理
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -49,4 +92,5 @@ spec:
     - name: {{ include "web-demo.fullname" . }}
       port: {{ .Values.service.port }}
   {{- end }}
+{{- end }}
 {{- end }}

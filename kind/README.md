@@ -71,6 +71,8 @@
 |---------|------|------|
 | 10080 | Envoy Gateway | HTTP 入口（通过 Host 头路由） |
 | 10443 | Envoy Gateway | HTTPS 入口 |
+| 30080 | Envoy Gateway (NodePort) | HTTP + gRPC 统一入口 |
+| 50051 | go-grpc-svc (port-forward) | gRPC 直连（绕过 Gateway） |
 | 3100 | Headlamp | K8s Dashboard（Token 登录） |
 | 3200 | Helm Dashboard | 集群资源 + Helm release 管理 |
 | 3000 | Grafana | 监控面板 (admin / prom-operator) |
@@ -213,6 +215,17 @@ cat headlamp-token.txt
 kubectl get pods -n envoy-gateway-system
 kubectl get gateway -A
 ```
+
+### Q: Gateway 30080 端口超时 (context deadline exceeded)
+
+**根因**：`externalTrafficPolicy: Local` 时流量不跨节点转发。如果 Envoy Pod 不在 control-plane 节点则超时。
+
+**现状**：已通过 `manifests/gateway.yaml` 中 EnvoyProxy CRD 的 StrategicMerge patch 声明式解决：
+- `externalTrafficPolicy: Cluster`（流量可跨节点）
+- `nodeSelector` 将 Envoy Pod 调度到 control-plane 节点
+- `nodePort: 30080` 固定端口号
+
+所有配置通过 `kubectl apply -f manifests/gateway.yaml` 生效，无需脚本临时修复。
 
 ### Q: 端口 10080 被占用
 

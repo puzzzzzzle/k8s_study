@@ -8,10 +8,13 @@ spec:
   type: {{ .Values.service.type }}
   ports:
     - port: {{ .Values.service.port }}
-      targetPort: http
+      targetPort: {{ .Values.service.portName | default "http" }}
       protocol: TCP
-      name: http
-    {{- if and .Values.metrics.enabled (ne (.Values.metrics.port | int) (.Values.service.port | int)) }}
+      name: {{ .Values.service.portName | default "http" }}
+      {{- if .Values.service.appProtocol }}
+      appProtocol: {{ .Values.service.appProtocol }}
+      {{- end }}
+    {{- if and .Values.metrics.enabled (ne ((.Values.metrics).port | default 0 | int) (.Values.service.port | int)) }}
     - port: {{ .Values.metrics.port }}
       targetPort: http-metrics
       protocol: TCP

@@ -24,6 +24,10 @@ nodes:
       - containerPort: 30080
         hostPort: 30080
         protocol: TCP
+      # gRPC 独立端口（备用，当前 gRPC 复用 30080 http 入口）
+      - containerPort: 30051
+        hostPort: 30051
+        protocol: TCP
   - role: worker
   - role: worker
   - role: worker

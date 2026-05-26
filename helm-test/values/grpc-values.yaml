@@ -1,0 +1,68 @@
+# go-grpc-svc Helm values
+# 纯 gRPC 服务，配置读取和下发 + Prometheus metrics
+
+replicaCount: 1
+
+image:
+  repository: localhost:5001/go-grpc-svc
+  tag: "latest"
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port: 50051
+  portName: grpc            # 端口名（Service + container port 共用）
+  appProtocol: grpc         # gRPC 使用 h2c (HTTP/2 clear-text)
+
+# 容器端口（gRPC 主端口）
+containerPort: 50051
+
+# 环境变量
+env:
+  GRPC_PORT: "50051"
+  METRICS_PORT: "9090"
+  CONFIG_DIR: "/shared-config"
+
+# Prometheus 监控（独立 HTTP 端口暴露 /metrics）
+metrics:
+  enabled: true
+  port: 9090               # metrics HTTP 端口（与 gRPC 端口分离）
+  path: /metrics
+
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  namespace: monitoring
+
+# 共享存储卷（挂载 NFS 配置目录，只读）
+sharedVolume:
+  enabled: false
+  claimName: "nfs-shared-pvc"
+  mountPath: "/shared-config"
+  readOnly: true
+
+# Nginx 不需要
+nginx:
+  enabled: false
+
+# Gateway 暴露 gRPC（通过 Envoy Gateway GRPCRoute）
+# GRPCRoute 绑定到 http listener (port 80)，Envoy 通过 content-type:application/grpc 自动区分
+# 这样 gRPC 和 HTTP 流量复用同一入口端口 (宿主机 30080)，避免 kind 额外端口映射
+gateway:
+  enabled: true
+  type: grpc               # 使用 GRPCRoute 而非 HTTPRoute
+  name: "demo-gateway"     # 复用公共 Gateway
+  sectionName: "http"      # 绑定到 Gateway 的 http listener (port 80，复用 NodePort 30080)
+  # 按 gRPC service name 路由（proto 的 package.ServiceName）
+  # 只要指定 service，该 service 下所有 method 都会路由到此后端
+  grpcRoutes:
+    - service: configsvc.ConfigService
+    # gRPC 反射服务（让 grpcurl list / describe 能通过 Gateway 工作）
+    - service: grpc.reflection.v1alpha.ServerReflection
+    - service: grpc.reflection.v1.ServerReflection
+  # 更多示例：
+  # grpcRoutes:
+  #   - service: configsvc.ConfigService          # 匹配 service 下所有方法
+  #   - service: user.UserService                 # 另一个 service（通常在另一个 helm release 中）
+  #   - service: health.HealthCheck               # 健康检查
+  #     method: Check                             # 可选：只匹配特定方法

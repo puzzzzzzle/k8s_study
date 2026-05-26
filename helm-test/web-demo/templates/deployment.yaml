@@ -25,9 +25,21 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
-            - name: http
-              containerPort: {{ .Values.service.port }}
+            - name: {{ .Values.service.portName | default "http" }}
+              containerPort: {{ .Values.containerPort | default .Values.service.port }}
               protocol: TCP
+            {{- if and .Values.metrics.enabled (ne ((.Values.metrics).port | default 0 | int) (.Values.service.port | int)) (not .Values.nginx.enabled) }}
+            - name: http-metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          {{- if .Values.env }}
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
           {{- if or .Values.nginx.enabled .Values.sharedVolume.enabled }}
           volumeMounts:
             {{- if .Values.nginx.enabled }}

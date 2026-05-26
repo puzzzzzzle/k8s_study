@@ -40,6 +40,7 @@ CHART_DIR="./web-demo"
 declare -A SERVICES=(
   ["nginx-demo"]="values/nginx-values.yaml"
   ["go-pingpong"]="values/go-values.yaml"
+  ["go-grpc-svc"]="values/grpc-values.yaml"
 )
 
 for RELEASE in "${!SERVICES[@]}"; do
@@ -123,6 +124,13 @@ echo ""
 log "访问方式:"
 log "  curl http://localhost:${NODE_PORT}/        → nginx-demo"
 log "  curl http://localhost:${NODE_PORT}/ping    → go-pingpong"
+log "  grpcurl -plaintext <pod-ip>:50051 list    → go-grpc-svc"
+echo ""
+log "gRPC 测试（port-forward 后）:"
+log "  kubectl port-forward svc/go-grpc-svc 50051:50051"
+log "  grpcurl -plaintext localhost:50051 list"
+log "  grpcurl -plaintext localhost:50051 configsvc.ConfigService/Ping"
+log "  grpcurl -plaintext -d '{\"filename\":\"app.json\"}' localhost:50051 configsvc.ConfigService/GetConfig"
 echo ""
 log "共享配置写入:"
 log "  kubectl cp ./my-config.json \$(kubectl get pod -l app=config-writer -o jsonpath='{.items[0].metadata.name}'):/shared-config/"
