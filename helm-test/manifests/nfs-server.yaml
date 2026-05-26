@@ -1,0 +1,135 @@
+# NFS 共享存储公共基础设施
+# 用途：大配置下发，多 Pod 共享读、单 Pod 写
+# 用法: kubectl apply -f manifests/nfs-server.yaml
+# 必须在业务 Pod 部署前先部署，否则 PVC 挂载失败
+---
+# 1. NFS Server Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-server
+  namespace: default
+  labels:
+    app: nfs-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nfs-server
+  template:
+    metadata:
+      labels:
+        app: nfs-server
+    spec:
+      containers:
+      - name: nfs-server
+        image: itsthenetwork/nfs-server-alpine:latest
+        ports:
+        - name: nfs
+          containerPort: 2049
+        env:
+        - name: SHARED_DIRECTORY
+          value: /nfs-share
+        volumeMounts:
+        - name: nfs-storage
+          mountPath: /nfs-share
+        securityContext:
+          privileged: true    # NFS Server 需要 privileged 权限导出卷
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+      volumes:
+      - name: nfs-storage
+        emptyDir: {}          # kind 环境使用 emptyDir；生产环境可替换为 hostPath 或云盘
+---
+# 2. NFS Server Service（ClusterIP，供 PV 引用）
+apiVersion: v1
+kind: Service
+metadata:
+  name: nfs-server
+  namespace: default
+  labels:
+    app: nfs-server
+spec:
+  type: ClusterIP
+  ports:
+  - name: nfs
+    port: 2049
+    targetPort: 2049
+  selector:
+    app: nfs-server
+---
+# 3. PersistentVolume（指向 NFS Server Service DNS）
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-shared-pv
+  labels:
+    type: nfs-shared
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+  - ReadWriteMany            # NFS 天然支持 RWX
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    server: nfs-server.default.svc.cluster.local
+    path: /
+---
+# 4. PersistentVolumeClaim（业务 Pod 和 config-writer 共同引用）
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-shared-pvc
+  namespace: default
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  selector:
+    matchLabels:
+      type: nfs-shared
+---
+# 5. Config Writer Deployment（唯一可写 Pod，运维通过 kubectl cp 写入配置）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-writer
+  namespace: default
+  labels:
+    app: config-writer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: config-writer
+  template:
+    metadata:
+      labels:
+        app: config-writer
+    spec:
+      containers:
+      - name: writer
+        image: busybox:1.36
+        command: ["sh", "-c", "echo 'config-writer ready'; sleep infinity"]
+        volumeMounts:
+        - name: shared-config
+          mountPath: /shared-config
+          # 不设置 readOnly，config-writer 拥有读写权限
+        resources:
+          limits:
+            cpu: 50m
+            memory: 32Mi
+          requests:
+            cpu: 10m
+            memory: 16Mi
+      volumes:
+      - name: shared-config
+        persistentVolumeClaim:
+          claimName: nfs-shared-pvc

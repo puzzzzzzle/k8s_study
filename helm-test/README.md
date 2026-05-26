@@ -14,21 +14,25 @@ helm-test/
 │   ├── values.yaml            # 默认值（nginx.enabled: false）
 │   └── templates/
 │       ├── _helpers.tpl
-│       ├── deployment.yaml    # 支持 nginx / 通用两种模式
+│       ├── deployment.yaml    # 支持 nginx / 通用两种模式 + sharedVolume 挂载
 │       ├── service.yaml
 │       ├── configmap.yaml     # 仅 nginx.enabled 时渲染
 │       ├── gateway.yaml       # HTTPRoute（GatewayClass/Gateway 由开关控制）
 │       └── service-monitor.yaml
+├── values/                    # Helm values 文件（各服务覆盖配置）
+│   ├── nginx-values.yaml      # nginx 静态站点配置（HTTPRoute: /）
+│   └── go-values.yaml         # Go ping/pong API 配置（HTTPRoute: /ping）
+├── manifests/                 # K8s 原生资源（kubectl apply 管理）
+│   ├── gateway.yaml           # 🔑 公共基础设施（GatewayClass + Gateway）
+│   └── nfs-server.yaml        # 🔑 NFS 共享存储基础设施（NFS Server + PV/PVC + config-writer）
 ├── go-pingpong/               # Go ping/pong API 服务源码
 │   ├── main.go                # GET /ping → pong，GET /metrics → prometheus
 │   ├── go.mod
 │   └── Dockerfile
-├── gateway.yaml               # 🔑 公共基础设施（GatewayClass + Gateway）
-├── nginx-values.yaml          # nginx 静态站点配置（HTTPRoute: /）
-├── go-values.yaml             # Go ping/pong API 配置（HTTPRoute: /ping）
-└── output/                    # helm template 渲染产物（预览用）
-    ├── nginx-helm.yaml
-    └── go-helm.yaml
+├── output/                    # helm template 渲染产物（预览用）
+│   ├── nginx-helm.yaml
+│   └── go-helm.yaml
+└── upgrade.sh                 # 一键部署脚本（NFS + Gateway + Helm 服务）
 ```
 
 ### Values 设计
@@ -42,6 +46,7 @@ helm-test/
 | `nginx.enabled` | `true` → nginx 模式；`false` → 通用容器模式 |
 | `metrics.port` | nginx 模式填 exporter 端口（9113）；通用模式填应用自身端口 |
 | `serviceMonitor.enabled` | 是否生成 Prometheus ServiceMonitor |
+| `sharedVolume.enabled` | 是否挂载 NFS 共享存储卷（只读） |
 
 ### 预览渲染结果（不发布）
 
@@ -49,17 +54,17 @@ helm-test/
 cd /data/srcs/k8s/helm-test
 
 # 预览 nginx 静态站点渲染结果
-helm template nginx-demo ./web-demo -f nginx-values.yaml
+helm template nginx-demo ./web-demo -f values/nginx-values.yaml
 
 # 预览 Go ping/pong 渲染结果
-helm template go-pingpong ./web-demo -f go-values.yaml
+helm template go-pingpong ./web-demo -f values/go-values.yaml
 
 # 只看某个模板文件
-helm template nginx-demo ./web-demo -f nginx-values.yaml -s templates/deployment.yaml
+helm template nginx-demo ./web-demo -f values/nginx-values.yaml -s templates/deployment.yaml
 
 # 输出到文件
-helm template nginx-demo ./web-demo -f nginx-values.yaml > output/nginx-helm.yaml
-helm template go-pingpong ./web-demo -f go-values.yaml > output/go-helm.yaml
+helm template nginx-demo ./web-demo -f values/nginx-values.yaml > output/nginx-helm.yaml
+helm template go-pingpong ./web-demo -f values/go-values.yaml > output/go-helm.yaml
 ```
 
 > `helm template` 纯本地渲染，无需连接集群；`helm install --dry-run` 需连接集群，可进行服务端校验。
@@ -85,15 +90,24 @@ go-values.yaml 中 `imagePullPolicy: Never` 确保使用本地镜像，不尝试
 ```bash
 cd /data/srcs/k8s/helm-test
 
-# 部署 nginx 静态站点
-helm install nginx-demo ./web-demo -f nginx-values.yaml
+# 一键部署全部（推荐）
+./upgrade.sh
 
-# 部署 Go ping/pong API
-helm install go-pingpong ./web-demo -f go-values.yaml
+# 或手动分步部署：
+
+# 1. 部署 NFS 共享存储基础设施（必须先于业务服务）
+kubectl apply -f manifests/nfs-server.yaml
+
+# 2. 部署 Gateway 公共基础设施
+kubectl apply -f manifests/gateway.yaml
+
+# 3. 部署业务服务
+helm install nginx-demo ./web-demo -f values/nginx-values.yaml
+helm install go-pingpong ./web-demo -f values/go-values.yaml
 
 # 更新（幂等，不存在时自动创建）
-helm upgrade --install nginx-demo ./web-demo -f nginx-values.yaml
-helm upgrade --install go-pingpong ./web-demo -f go-values.yaml
+helm upgrade --install nginx-demo ./web-demo -f values/nginx-values.yaml
+helm upgrade --install go-pingpong ./web-demo -f values/go-values.yaml
 ```
 
 ### 查看状态
@@ -102,6 +116,7 @@ helm upgrade --install go-pingpong ./web-demo -f go-values.yaml
 helm list
 kubectl get pods
 kubectl get svc
+kubectl get pv,pvc
 ```
 
 ### 访问服务
@@ -135,7 +150,98 @@ Go 模式：
 ```bash
 helm uninstall nginx-demo
 helm uninstall go-pingpong
+kubectl delete -f manifests/nfs-server.yaml
+kubectl delete -f manifests/gateway.yaml
 ```
+
+### 共享存储（NFS 配置下发）
+
+本项目支持通过 NFS 共享存储实现大配置文件下发，多 Pod 共享读取、单 Pod 写入。
+
+#### 架构说明
+
+```
+                    ┌─────────────────────────────────────────────┐
+                    │          NFS 共享存储架构                     │
+                    │                                             │
+  kubectl cp       │  config-writer Pod (RW)                     │
+  ─────────────────┤    ↓ 写入配置到 /shared-config/              │
+                    │                                             │
+                    │  NFS Server Pod (:2049)                     │
+                    │    ↑ PV/PVC (ReadWriteMany)                 │
+                    │                                             │
+                    │  业务 Pod 1 (RO) ← /shared-config/          │
+                    │  业务 Pod 2 (RO) ← /shared-config/          │
+                    │  业务 Pod N (RO) ← /shared-config/          │
+                    └─────────────────────────────────────────────┘
+```
+
+**设计原则**：
+- NFS Server Pod 在集群内提供 NFS 服务，无需外部存储依赖
+- PVC 使用 `ReadWriteMany` accessMode，NFS 天然支持跨节点共享
+- config-writer Pod 拥有读写权限，是唯一的写入入口
+- 业务 Pod 通过 Chart 开关以 `readOnly: true` 挂载，只能读取
+
+#### 部署 NFS 基础设施
+
+```bash
+# 部署 NFS Server + PV/PVC + config-writer
+kubectl apply -f manifests/nfs-server.yaml
+
+# 等待 NFS Server 就绪
+kubectl wait --for=condition=ready pod -l app=nfs-server --timeout=120s
+
+# 确认 PV/PVC 状态
+kubectl get pv,pvc
+```
+
+#### 写入配置
+
+```bash
+# 方式一：通过 kubectl cp 拷贝文件到 config-writer Pod
+WRITER_POD=$(kubectl get pod -l app=config-writer -o jsonpath='{.items[0].metadata.name}')
+kubectl cp ./my-config.json ${WRITER_POD}:/shared-config/my-config.json
+
+# 方式二：直接 exec 进入 writer Pod 编辑
+kubectl exec -it ${WRITER_POD} -- sh
+# 在 /shared-config/ 目录下创建/修改配置文件
+
+# 验证文件已写入
+kubectl exec ${WRITER_POD} -- ls -la /shared-config/
+```
+
+#### 业务 Pod 挂载（Chart 配置）
+
+在 values 文件中开启 `sharedVolume`：
+
+```yaml
+# 在 values/xxx-values.yaml 中添加
+sharedVolume:
+  enabled: true
+  claimName: "nfs-shared-pvc"     # 引用 NFS PVC
+  mountPath: "/shared-config"     # 容器内挂载路径
+  readOnly: true                  # 只读挂载
+```
+
+部署后，业务 Pod 可在 `/shared-config/` 路径下读取配置文件。
+
+#### Values 配置说明
+
+| 字段 | 说明 | 默认值 |
+|------|------|--------|
+| `sharedVolume.enabled` | 是否挂载共享存储卷 | `false` |
+| `sharedVolume.claimName` | 引用的 PVC 名称 | `nfs-shared-pvc` |
+| `sharedVolume.mountPath` | 容器内挂载路径 | `/shared-config` |
+| `sharedVolume.readOnly` | 是否只读挂载 | `true` |
+
+#### 注意事项
+
+| 场景 | 说明 |
+|------|------|
+| 部署顺序 | NFS Server 必须先于业务 Pod 部署，否则 PVC 挂载失败（Pod 会 Pending） |
+| 配置更新 | 写入 NFS 后，已运行的 Pod 无需重启即可看到新文件（NFS 实时同步） |
+| 存储持久性 | kind 环境下 NFS 使用 emptyDir，Pod 重建后数据丢失；生产环境需换为持久存储 |
+| 容量限制 | PV 配置 1Gi，适合配置文件场景；大文件需调整 capacity |
 
 ### Envoy Gateway（Gateway API 入口网关）
 
@@ -155,11 +261,11 @@ cd /data/srcs/k8s/kind
 cd /data/srcs/k8s/helm-test
 
 # 1. 部署公共基础设施（GatewayClass + Gateway）
-kubectl apply -f gateway.yaml
+kubectl apply -f manifests/gateway.yaml
 
 # 2. 部署业务服务（各自只创建 HTTPRoute）
-helm upgrade --install nginx-demo ./web-demo -f nginx-values.yaml
-helm upgrade --install go-pingpong ./web-demo -f go-values.yaml
+helm upgrade --install nginx-demo ./web-demo -f values/nginx-values.yaml
+helm upgrade --install go-pingpong ./web-demo -f values/go-values.yaml
 
 # 3. Patch Envoy Service（首次部署 Gateway 后执行一次）
 cd /data/srcs/k8s/kind && ./install-gateway.sh
@@ -234,7 +340,7 @@ spec:
 #### 多服务共享 Gateway 的部署模式
 
 ```
-公共基础设施（gateway.yaml，kubectl apply 管理）：
+公共基础设施（manifests/gateway.yaml，kubectl apply 管理）：
   - GatewayClass: eg
   - Gateway: demo-gateway
 
@@ -359,8 +465,8 @@ spec:
 
 ```bash
 # 查看 nginx-demo 的 Gateway 资源
-helm template nginx-demo ./web-demo -f nginx-values.yaml -s templates/gateway.yaml
+helm template nginx-demo ./web-demo -f values/nginx-values.yaml -s templates/gateway.yaml
 
 # 查看 go-pingpong 的 HTTPRoute
-helm template go-pingpong ./web-demo -f go-values.yaml -s templates/gateway.yaml
+helm template go-pingpong ./web-demo -f values/go-values.yaml -s templates/gateway.yaml
 ```

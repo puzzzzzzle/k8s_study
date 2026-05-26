@@ -28,13 +28,20 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port }}
               protocol: TCP
-          {{- if .Values.nginx.enabled }}
+          {{- if or .Values.nginx.enabled .Values.sharedVolume.enabled }}
           volumeMounts:
+            {{- if .Values.nginx.enabled }}
             - name: html-volume
               mountPath: /usr/share/nginx/html
             - name: nginx-status-conf
               mountPath: /etc/nginx/conf.d/status.conf
               subPath: status.conf
+            {{- end }}
+            {{- if .Values.sharedVolume.enabled }}
+            - name: shared-config
+              mountPath: {{ .Values.sharedVolume.mountPath }}
+              readOnly: {{ .Values.sharedVolume.readOnly }}
+            {{- end }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
@@ -55,8 +62,9 @@ spec:
               cpu: 10m
               memory: 16Mi
         {{- end }}
-      {{- if .Values.nginx.enabled }}
+      {{- if or .Values.nginx.enabled .Values.sharedVolume.enabled }}
       volumes:
+        {{- if .Values.nginx.enabled }}
         - name: html-volume
           configMap:
             name: {{ include "web-demo.fullname" . }}-html
@@ -66,4 +74,11 @@ spec:
             items:
               - key: status.conf
                 path: status.conf
+        {{- end }}
+        {{- if .Values.sharedVolume.enabled }}
+        - name: shared-config
+          persistentVolumeClaim:
+            claimName: {{ .Values.sharedVolume.claimName }}
+            readOnly: {{ .Values.sharedVolume.readOnly }}
+        {{- end }}
       {{- end }}

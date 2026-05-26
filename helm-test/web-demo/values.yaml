@@ -37,7 +37,7 @@ serviceMonitor:
   namespace: monitoring   # Prometheus Operator 所在命名空间
 
 # Envoy Gateway（Gateway API）
-# 公共基础设施（GatewayClass + Gateway）由独立的 gateway.yaml 管理
+# 公共基础设施（GatewayClass + Gateway）由独立的 manifests/gateway.yaml 管理
 # 此处仅控制 HTTPRoute 的创建
 gateway:
   enabled: false
@@ -49,3 +49,12 @@ gateway:
   #   pathType: PathPrefix
   # - path: /health
   #   pathType: Exact
+
+# 共享存储卷（NFS 配置下发）
+# 公共基础设施（NFS Server + PV/PVC）由 manifests/nfs-server.yaml 管理
+# 此处仅控制业务 Pod 的挂载行为
+sharedVolume:
+  enabled: false
+  claimName: "nfs-shared-pvc"      # 引用的 PVC 名称
+  mountPath: "/shared-config"      # 容器内挂载路径
+  readOnly: true                   # 业务 Pod 只读挂载

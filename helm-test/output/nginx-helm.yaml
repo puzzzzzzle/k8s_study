@@ -132,7 +132,7 @@ spec:
               cpu: 10m
               memory: 16Mi
       volumes:
-        - name: html-volume
+        - name: html-volu
           configMap:
             name: nginx-demo-html
         - name: nginx-status-conf

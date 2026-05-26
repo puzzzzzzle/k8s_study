@@ -1,5 +1,5 @@
 #!/bin/bash
-# 一键部署/更新所有资源（Gateway 公共基础设施 + Helm 业务服务）
+# 一键部署/更新所有资源（K8s 基础设施 + Helm 业务服务）
 # 幂等：不存在则创建，存在则更新
 set -euo pipefail
 
@@ -12,21 +12,34 @@ warn() { echo -e "\033[1;33m[WARN]\033[0m $*"; }
 err()  { echo -e "\033[1;31m[ERROR]\033[0m $*"; }
 
 # ============================================================
-# 1. Gateway 公共基础设施（GatewayClass + Gateway）
+# 1. NFS 共享存储基础设施（NFS Server + PV/PVC + config-writer）
+# ============================================================
+log "部署 NFS 共享存储基础设施..."
+kubectl apply -f manifests/nfs-server.yaml
+log "✅ NFS Server + PV/PVC + config-writer 已就绪"
+
+# 等待 NFS Server Pod 就绪（业务 Pod 挂载 PVC 前必须可用）
+log "等待 NFS Server Pod 就绪..."
+kubectl wait --for=condition=ready pod -l app=nfs-server --timeout=120s 2>/dev/null || {
+  warn "NFS Server Pod 未在 120s 内就绪，继续部署（业务 Pod 可能 pending）"
+}
+
+# ============================================================
+# 2. Gateway 公共基础设施（GatewayClass + Gateway）
 # ============================================================
 log "部署 Gateway 公共基础设施..."
-kubectl apply -f gateway.yaml
+kubectl apply -f manifests/gateway.yaml
 log "✅ GatewayClass + Gateway 已就绪"
 
 # ============================================================
-# 2. Helm 业务服务
+# 3. Helm 业务服务
 # ============================================================
 CHART_DIR="./web-demo"
 
 # 服务列表：release名称 + values文件
 declare -A SERVICES=(
-  ["nginx-demo"]="nginx-values.yaml"
-  ["go-pingpong"]="go-values.yaml"
+  ["nginx-demo"]="values/nginx-values.yaml"
+  ["go-pingpong"]="values/go-values.yaml"
 )
 
 for RELEASE in "${!SERVICES[@]}"; do
@@ -43,7 +56,7 @@ for RELEASE in "${!SERVICES[@]}"; do
 done
 
 # ============================================================
-# 3. Patch Envoy Service（等待 Gateway data-plane 就绪）
+# 4. Patch Envoy Service（等待 Gateway data-plane 就绪）
 # ============================================================
 GATEWAY_NAME="demo-gateway"
 NODE_PORT="30080"
@@ -110,3 +123,7 @@ echo ""
 log "访问方式:"
 log "  curl http://localhost:${NODE_PORT}/        → nginx-demo"
 log "  curl http://localhost:${NODE_PORT}/ping    → go-pingpong"
+echo ""
+log "共享配置写入:"
+log "  kubectl cp ./my-config.json \$(kubectl get pod -l app=config-writer -o jsonpath='{.items[0].metadata.name}'):/shared-config/"
+log "  业务 Pod 可在 /shared-config/ 下读取配置文件"
